@@ -1,0 +1,42 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Teambrella.Client", "Teambrella.Client\Teambrella.Client.csproj", "{A3AC0691-D598-4A85-9DAD-47474719AA61}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Teambrella.Client.App", "Teambrella.Client.App\Teambrella.Client.App.csproj", "{01A67A2A-186D-4A83-98A1-B5B206303A87}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Teambrella.Client.Service", "Teambrella.Client.Service\Teambrella.Client.Service.csproj", "{FB8A28D5-0A2A-4947-8DCA-B44D2E31BB3A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "howto", "howto", "{2FC6336E-F3AA-404A-B629-163620332DB1}"
+	ProjectSection(SolutionItems) = preProject
+		Install-TeambrellaService.bat = Install-TeambrellaService.bat
+		LICENSE.txt = LICENSE.txt
+		readme.txt = readme.txt
+		Uninstall-TeambrellaService.bat = Uninstall-TeambrellaService.bat
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A3AC0691-D598-4A85-9DAD-47474719AA61}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3AC0691-D598-4A85-9DAD-47474719AA61}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3AC0691-D598-4A85-9DAD-47474719AA61}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3AC0691-D598-4A85-9DAD-47474719AA61}.Release|Any CPU.Build.0 = Release|Any CPU
+		{01A67A2A-186D-4A83-98A1-B5B206303A87}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{01A67A2A-186D-4A83-98A1-B5B206303A87}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{01A67A2A-186D-4A83-98A1-B5B206303A87}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{01A67A2A-186D-4A83-98A1-B5B206303A87}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FB8A28D5-0A2A-4947-8DCA-B44D2E31BB3A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FB8A28D5-0A2A-4947-8DCA-B44D2E31BB3A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FB8A28D5-0A2A-4947-8DCA-B44D2E31BB3A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FB8A28D5-0A2A-4947-8DCA-B44D2E31BB3A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

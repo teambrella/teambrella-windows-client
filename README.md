@@ -1,3 +1,6 @@
+Teambrella Windows Client
+=======
+
 [Teambrella](https://teambrella.com)'s client is a bitcoin wallet software for the p2p insurance system.
 
 > Your funds are stored in a special personal Bitcoin wallet. The funds in the wallet can only be spent if both you and three out of eight semi-randomly selected members of your team co-sign a transaction. The private keys to the wallet are stored on respective client systems only (i.e., yours and those of your cosigners) and are never transmitted outside.

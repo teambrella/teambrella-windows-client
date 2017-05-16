@@ -75,13 +75,7 @@ namespace Teambrella.Client.Services
         public static void WriteException(Exception ex, string message = null)
         {
             var logger = GetLogger();
-            string str = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + ": Exception is thrown." + Environment.NewLine;
-
-            if (!string.IsNullOrWhiteSpace(message))
-            {
-                str += message + Environment.NewLine;
-            }
-
+            string str = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + ": " + (message ?? "Exception is thrown.") + Environment.NewLine + "   ";
 #if DEBUG
             str += ex.ToString();
 #else

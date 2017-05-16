@@ -72,11 +72,12 @@ namespace Teambrella.Client.Repositories
                 .ToList();
         }
 
-        public List<Tx> GetApprovedAndCosigned()
+        public List<Tx> GetApprovedAndCosigned(string pubkey)
         {
             return _context.Tx
                 .Where(x => x.Resolution == TxClientResolution.Approved)
                 .Where(x => x.State == TxState.Cosigned)
+                .Where(x => x.Teammate.PublicKey == pubkey)
                 .Where(x => x.Inputs.Count > 0)
                 .ToList();
         }
@@ -105,7 +106,7 @@ namespace Teambrella.Client.Repositories
 
         public TxSignature AddSignature(TxSignature signature)
         {
-            TxSignature res = GetSignature(signature.TxInput.Id, signature.Teammate.Id);
+            TxSignature res = GetSignature(signature.TxInputId, signature.TeammateId);
             if (res != null)
             {
                 return res;

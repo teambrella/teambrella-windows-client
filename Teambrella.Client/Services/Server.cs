@@ -24,7 +24,7 @@ namespace Teambrella.Client.Services
 {
     public class Server
     {
-        private static string _siteUrl = "http://surilla.com";
+        private static string _siteUrl = "https://teambrella.com";
         private RestClient _restClient = new RestClient(_siteUrl);
         private long _timestamp;
 
@@ -51,7 +51,14 @@ namespace Teambrella.Client.Services
             {
                 return false;
             }
-            _timestamp = responseTimestamp.Data.Timestamp;
+
+            var status = responseTimestamp.Data.Status;
+            if (status.ResultCode != 0)
+            {
+                return false;
+            }
+
+            _timestamp = status.Timestamp;
             return true;
         }
 
@@ -67,9 +74,9 @@ namespace Teambrella.Client.Services
                 var responseInit = _restClient.Execute<ApiResult>(request);
 
                 ApiResult result = responseInit.Data;
-                if (result != null)
+                if (result != null && result.Status != null && result.Status.ResultCode == 0)
                 {
-                    _timestamp = result.Timestamp;
+                    _timestamp = result.Status.Timestamp;
                     return result;
                 }
             }
@@ -77,17 +84,17 @@ namespace Teambrella.Client.Services
             return null;
         }
 
-        public GetUpdatesApiResult GetUpdates(Key bitcoinPrivateKey, long lastUpdated, IEnumerable<Tx> txsToUpdate, IEnumerable<TxSignature> txSignaturesToUpdate)
+        public GetUpdatesResultData GetUpdates(Key bitcoinPrivateKey, long since, IEnumerable<Tx> txsToUpdate, IEnumerable<TxSignature> txSignaturesToUpdate)
         {
             var modelIn = new GetUpdatesApiQuery();
             modelIn.AddSignature(_timestamp, bitcoinPrivateKey);
-            modelIn.LastUpdated = lastUpdated;
+            modelIn.Since = since;
             modelIn.TxInfos = txsToUpdate.Select(x => new TxClientInfoApi
-                {
-                    Id = x.Id,
-                    ResolutionTime = x.ClientResolutionTime,
-                    Resolution = x.Resolution
-                }).ToList();
+            {
+                Id = x.Id,
+                ResolutionTime = x.ClientResolutionTime,
+                Resolution = x.Resolution
+            }).ToList();
             modelIn.TxSignatures = txSignaturesToUpdate.Select(x => new TxSignatureClientInfoApi
             {
                 Signature = Convert.ToBase64String(x.Signature),
@@ -98,8 +105,8 @@ namespace Teambrella.Client.Services
             var request = new RestRequest("me/GetUpdates", Method.POST);
             request.RequestFormat = DataFormat.Json;
             request.AddBody(modelIn);
-            var response = _restClient.Execute<GetUpdatesApiResult>(request);
-            return response.Data;
+            var response = _restClient.Execute<ApiResult<GetUpdatesResultData>>(request);
+            return response.Data.Data;
         }
     }
 }

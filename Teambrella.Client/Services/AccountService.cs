@@ -202,9 +202,14 @@ namespace Teambrella.Client.Services
             return _txRepo.GetCoSignable();
         }
 
-        public List<Tx> GetApprovedAndCosignedTxs()
+        public List<Tx> GetApprovedAndCosignedTxs(User user)
         {
-            return _txRepo.GetApprovedAndCosigned();
+            string key = user.PrivateKey;
+            if (string.IsNullOrEmpty(key))
+                return new List<Tx>(0);
+
+            string pubkey = new BitcoinSecret(user.PrivateKey).PubKey.ToString();
+            return _txRepo.GetApprovedAndCosigned(pubkey);
         }
 
         public List<Tx> GetChanged(DateTime time)
@@ -237,23 +242,53 @@ namespace Teambrella.Client.Services
 
         public bool UpdateData()
         {
-            if (_connection == null)
+            try
             {
-                if (!ServerInitToConnectionRepo())
+                if (_connection == null)
+                {
+                    if (!ServerInitToConnectionRepo())
+                    {
+                        return false;
+                    }
+                }
+
+                AutoApproveTxs();
+
+                if (!ServerUpdatesToLocalDb())
                 {
                     return false;
                 }
+                UpdateAddresses();
+
+                return true;
             }
-
-            AutoApproveTxs();
-
-            if (!ServerUpdatesToLocalDb())
+            catch(Exception ex)
             {
+                Logger.WriteException(ex);
+                ForceServerUpdatesReload();
+
                 return false;
             }
-            UpdateAddresses();
+        }
 
-            return true;
+        public void ForceServerUpdatesReload()
+        {
+            try
+            {
+                // corrupted state. Refresh all updates:
+                var con = _connection ?? _connectionRepo.GetConnection();
+
+                if (con != null)
+                {
+                    con.LastUpdated = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                    _connectionRepo.Update(con);
+                    _context.SaveChanges();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteException(ex, "Cannot reset Last Updated server date.");
+            }
         }
 
         private bool ServerInitToConnectionRepo()
@@ -352,11 +387,11 @@ namespace Teambrella.Client.Services
         private bool ServerUpdatesToLocalDb()
         {
             Key key = GetUser().BitcoinPrivateKey;
-            long t = _connection.LastUpdated.Ticks;
+            long since = _connection.LastUpdated.Ticks;
             var txsToUpdate = _txRepo.GetTxsNeedServerUpdate();
             var txSignatures = _txRepo.GetTxsSignaturesNeedServerUpdate();
 
-            GetUpdatesApiResult serverResponse = _server.GetUpdates(key, t, txsToUpdate.Where(x => x.Teammate.Team.IsInNormalState), txSignatures);
+            GetUpdatesResultData serverResponse = _server.GetUpdates(key, since, txsToUpdate.Where(x => x.Teammate.Team.IsInNormalState), txSignatures);
             if (null == serverResponse)
             {
                 // todo: log record
@@ -404,7 +439,7 @@ namespace Teambrella.Client.Services
                 bool okToInsertOrUpdate = true;
                 if (existingTeammate != null)
                 {
-                    if (teammate.PublicKey != existingTeammate.PublicKey
+                    if (existingTeammate.PublicKey != null && teammate.PublicKey != existingTeammate.PublicKey
                         || teammate.FBName != existingTeammate.FBName
                         || teammate.TeamId != existingTeammate.TeamId)
                     {
@@ -605,7 +640,7 @@ namespace Teambrella.Client.Services
 
             // verify amounts if inputs are set
 
-            _connection.LastUpdated = DateTime.UtcNow;
+            _connection.LastUpdated = new DateTime(serverResponse.LastUpdated, DateTimeKind.Utc);
             _connectionRepo.Update(_connection);
 
             _context.SaveChanges();

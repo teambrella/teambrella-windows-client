@@ -25,7 +25,7 @@ namespace Teambrella.Client.Signing
         public static Script GetRedeemScript(BtcAddress address)
         {
             var ownerPublicKey = new PubKey(address.Teammate.PublicKey);
-            var cosignersPublicKeys = address.Cosigners.Select(x => new PubKey(x.Teammate.PublicKey)).ToList();
+            var cosignersPublicKeys = address.Cosigners.OrderBy(x => x.KeyOrder).Select(x => new PubKey(x.Teammate.PublicKey)).ToList();
             var n = cosignersPublicKeys.Count;
 
             Op[] ops = new Op[7 + n];

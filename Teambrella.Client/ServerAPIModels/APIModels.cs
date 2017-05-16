@@ -21,7 +21,19 @@ namespace Teambrella.Client.ServerApiModels
 {
     public class ApiResult
     {
-        public long Timestamp { get; set; }
+        public ResultStatus Status { get; set; }
+
+        public class ResultStatus
+        {
+            public long Timestamp { get; set; }
+            public int ResultCode { get; set; }
+            public string ErrorMessage { get; set; }
+        }
+    }
+
+    public class ApiResult<TResultData> : ApiResult
+    {
+        public TResultData Data { get; set; }
     }
 
     public class ApiQuery
@@ -41,12 +53,12 @@ namespace Teambrella.Client.ServerApiModels
 
     public class GetUpdatesApiQuery : ApiQuery
     {
-        public long LastUpdated { get; set; }
+        public long Since { get; set; }
         public List<TxClientInfoApi> TxInfos { get; set; }
         public List<TxSignatureClientInfoApi> TxSignatures { get; set; }
     }
 
-    public class GetUpdatesApiResult : ApiResult
+    public class GetUpdatesResultData
     {
         public List<Team> Teams { get; set; }
         public List<Teammate> Teammates { get; set; }
@@ -57,6 +69,8 @@ namespace Teambrella.Client.ServerApiModels
         public List<TxSignatureClientInfoApi> TxSignatures { get; set; }
         public List<BtcAddress> BTCAddresses { get; set; }
         public List<Cosigner> Cosigners { get; set; }
+
+        public long LastUpdated { get; set; } 
     }
 
     public class LoginQuery : ApiQuery

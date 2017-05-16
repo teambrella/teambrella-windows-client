@@ -357,29 +357,67 @@ namespace Teambrella.Client.Services
             return false;
         }
 
+        private bool IsTxPublished(Transaction blockchainTx, Network network)
+        {
+            var txId = blockchainTx.GetHash().ToString();
+
+            var webClient = new System.Net.WebClient();
+            string reply;
+            string query = "/api/tx/" + blockchainTx.GetHash().ToString();
+            var serverList = (network == Network.TestNet ? _testNetServers : _mainNetServers);
+
+            string expected = @"{""txid"":""" + txId + @"""";
+            foreach (string server in serverList)
+            {
+                try
+                {
+                    reply = webClient.DownloadString(server + query);
+                    if (reply != null && reply.StartsWith(expected))
+                    {
+                        return true;
+                    }
+                }
+                catch
+                {
+                    // There are not evidences yet, the transaction has been published.
+                    // We are going to return 'false'.
+                }
+            }
+
+            return false;
+        }
 
         public bool UpdateData()
         {
-            bool done = TryFetchAuxWalletUtxos(false, Network.Main) && TryFetchAuxWalletUtxos(false, Network.TestNet);
-            if (!done)
+            try
             {
-                // no internet connection so no utxo was fetched
+                bool done = TryFetchAuxWalletUtxos(false, Network.Main) && TryFetchAuxWalletUtxos(false, Network.TestNet);
+                if (!done)
+                {
+                    // no internet connection so no utxo was fetched
+                    return false;
+                }
+
+                // Check for new disbanding requests from cosigners
+                // get the op_return with the max cur_utxo, then max prev_utxo
+                RestoreMyDisbandingState();
+                PostDisbandingRequests();
+                CheckDisbandingMessages();
+                TryDisbanding();
+
+                CosignApprovedTxs();
+                PublishApprovedAndCosignedTxs();
+
+                _accountService.SaveChanges();
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.WriteException(ex);
+                _accountService.ForceServerUpdatesReload();   // try to re-reload all server updates.
                 return false;
             }
-
-            // Check for new disbanding requests from cosigners
-            // get the op_return with the max cur_utxo, then max prev_utxo
-            RestoreMyDisbandingState();
-            PostDisbandingRequests();
-            CheckDisbandingMessages();
-            TryDisbanding();
-
-            CosignApprovedTxs();
-            PublishApprovedAndCosignedTxs();
-
-            _accountService.SaveChanges();
-
-            return true;
         }
 
 
@@ -389,7 +427,15 @@ namespace Teambrella.Client.Services
             var txs = _accountService.GetCoSignableTxs();
             foreach (var tx in txs)
             {
+                Logger.WriteFormatMessage("++++++++++ CO-SIGNING TX: {0} ++++++++++", Print(tx));
                 var blockchainTx = GetTx(tx);
+                if (null == blockchainTx)
+                {
+                    Logger.WriteFormatMessage("INFO: could not cosign Tx {0}.", tx.Id); // I'm a cosigner for next addresses, not for the current.
+                    Logger.WriteMessage("++++++++++ skipped ++++++++++");
+                    continue;
+                }
+
                 var redeemScript = SignHelper.GetRedeemScript(tx.FromAddress);
                 var txInputs = tx.Inputs.OrderBy(x => x.Id).ToList();
                 for (int input = 0; input < txInputs.Count; input++)
@@ -398,8 +444,8 @@ namespace Teambrella.Client.Services
                     var signature = SignHelper.Cosign(redeemScript, user.BitcoinPrivateKey, blockchainTx, input);
                     var txSignature = new TxSignature
                     {
-                        TxInput = txInput,
-                        Teammate = tx.Teammate.Team.GetMe(user),
+                        TxInputId = txInput.Id,
+                        TeammateId = tx.Teammate.Team.GetMe(user).Id,
                         NeedUpdateServer = true,
                         Signature = signature
                     };
@@ -407,18 +453,37 @@ namespace Teambrella.Client.Services
                 }
                 tx.Resolution = TxClientResolution.Signed;
                 _accountService.UpdateTx(tx);
+                Logger.WriteMessage("++++++++++ done ++++++++++");
             }
             _accountService.SaveChanges();
         }
 
+        private string Print(Tx tx)
+        {
+            if (null == tx) return @"<null>";
+
+            Teammate from = tx.Teammate;
+            Teammate to = tx.ClaimTeammate;
+            string fromName = from == null ? "id:" + tx.TeammateId : from.Name;
+            string toClime = tx.ClaimId == 0 ? "" : to == null ? tx.ClaimId.ToString() : tx.ClaimId + @"/" + to.Name;
+
+            return string.Format(@"{{from: {0}, amount: {1}, fee: {2}, kind: {3}, claim: {4}}}", fromName, tx.AmountBTC, tx.FeeBtc, tx.Kind, toClime);
+        }
 
         private void PublishApprovedAndCosignedTxs()
         {
             var user = _accountService.GetUser();
-            var txs = _accountService.GetApprovedAndCosignedTxs();
+            var txs = _accountService.GetApprovedAndCosignedTxs(user);
             foreach (var tx in txs)
             {
+                Logger.WriteFormatMessage("========== PUBLISHING TX: {0} ==========", Print(tx));
                 var blockchainTx = GetTx(tx);
+                if (null == blockchainTx)
+                {
+                    Logger.WriteFormatMessage("ERROR: could not publish Tx {0}.", tx.Id);
+                    continue;
+                }
+
                 var redeemScript = SignHelper.GetRedeemScript(tx.FromAddress);
                 var txInputs = tx.Inputs.OrderBy(x => x.Id).ToList();
 
@@ -455,8 +520,8 @@ namespace Teambrella.Client.Services
                     var vchSig = signature.ToList();
                     var txSignature = new TxSignature
                     {
-                        TxInput = txInputs[input],
-                        Teammate = tx.Teammate.Team.GetMe(user),
+                        TxInputId = txInputs[input].Id,
+                        TeammateId = tx.Teammate.Team.GetMe(user).Id,
                         NeedUpdateServer = true,
                         Signature = signature
                     };
@@ -471,9 +536,21 @@ namespace Teambrella.Client.Services
 
                 string strTx = blockchainTx.ToHex();
 
-                if (PostTx(strTx, tx.Teammate.Team.Network))
+                Network network = tx.Teammate.Team.Network;
+                if (PostTx(strTx, network))
                 {
                     _accountService.ChangeTxResolution(tx, TxClientResolution.Published);
+                    Logger.WriteMessage("========== done ==========");
+                }
+                else if (IsTxPublished(blockchainTx, network))
+                {
+                    _accountService.ChangeTxResolution(tx, TxClientResolution.Published);
+                    Logger.WriteFormatMessage("WARNING: Blockchain tx:{0} has been already published. Have you really got a concurrent device running the same account?", blockchainTx.GetHash());
+                    Logger.WriteFormatMessage("========== resolved as duplicate tx ==========", Print(tx));
+                }
+                else
+                {
+                    Logger.WriteMessage("========== failed ==========");
                 }
             }
         }
@@ -1187,56 +1264,88 @@ namespace Teambrella.Client.Services
 
         private Transaction GetTx(Tx tx)
         {
-            decimal totalBTCAmount = 0;
-
-            var address = tx.Teammate.BtcAddressCurrent;
-            var resTx = new Transaction();
-            var txInputs = tx.Inputs.OrderBy(x => x.Id).ToList();
-            for (int input = 0; input < txInputs.Count; input++)
+            try
             {
-                var txInput = txInputs[input];
-                totalBTCAmount += txInput.AmountBTC;
-                resTx.Inputs.Add(new TxIn());
-                resTx.Inputs[input].PrevOut.N = (uint)txInput.PrevTxIndex;
-                resTx.Inputs[input].PrevOut.Hash = uint256.Parse(txInput.PrevTxId);
+                decimal totalBTCAmount = 0;
+
+                var address = tx.Teammate.BtcAddressCurrent;
+                var resTx = new Transaction();
+                var txInputs = tx.Inputs.OrderBy(x => x.Id).ToList();
+                for (int input = 0; input < txInputs.Count; input++)
+                {
+                    var txInput = txInputs[input];
+                    totalBTCAmount += txInput.AmountBTC;
+                    resTx.Inputs.Add(new TxIn());
+                    resTx.Inputs[input].PrevOut.N = (uint)txInput.PrevTxIndex;
+                    resTx.Inputs[input].PrevOut.Hash = uint256.Parse(txInput.PrevTxId);
+                }
+
+                totalBTCAmount -= tx.FeeBtc ?? NormalFeeBTC;
+                if (totalBTCAmount < tx.AmountBTC)
+                {
+                    Logger.WriteFormatMessage("Not enough funds for Tx. From: {0}, Teammate: {1}, BTC:{2}, Kind: {3}.", tx.FromAddress, tx.TeammateId, tx.AmountBTC, tx.Kind);
+                    return null;
+                }
+
+                if (tx.Kind == TxKind.Payout || tx.Kind == TxKind.Withdraw)
+                {
+                    var txOutputs = tx.Outputs.OrderBy(x => x.Id).ToList();
+                    var outputSum = 0M;
+                    for (int output = 0; output < txOutputs.Count; output++)
+                    {
+                        var txOutput = txOutputs[output];
+                        var bitcoinAddress = tx.Teammate.Team.Network.CreateBitcoinAddress(txOutput.PayTo.Address);
+                        resTx.Outputs.Add(new TxOut(new Money(txOutput.AmountBTC, MoneyUnit.BTC), bitcoinAddress));
+                        outputSum += txOutput.AmountBTC;
+                    }
+                    var changeAmount = totalBTCAmount - outputSum;
+                    if (changeAmount > NormalFeeBTC)
+                    {
+                        BtcAddress a = tx.Teammate.BtcAddressCurrent;
+                        if (null == a)
+                        {
+                            Logger.WriteFormatMessage("No (yet) current address for teammate {0}:{1}, where I would be a co-signer. Most probably, I'm a co-signer of her/his Next address.", tx.TeammateId, tx.Teammate.Name);
+                            return null;
+                        }
+
+                        var bitcoinAddressChange = tx.Teammate.Team.Network.CreateBitcoinAddress(a.Address);
+                        resTx.Outputs.Add(new TxOut(new Money(changeAmount, MoneyUnit.BTC), bitcoinAddressChange));
+                    }
+                }
+                else if (tx.Kind == TxKind.MoveToNextWallet)
+                {
+                    BtcAddress a = tx.Teammate.BtcAddressNext;
+                    if (null == a)
+                    {
+                        Logger.WriteFormatMessage("No (already) next address for teammate {0}:{1}, where I would be a co-signer. Most probably, the address status has been already changed to Current.", tx.TeammateId, tx.Teammate.Name);
+                        return null;
+                    }
+
+                    var bitcoinAddress = tx.Teammate.Team.Network.CreateBitcoinAddress(a.Address);
+                    resTx.Outputs.Add(new TxOut(new Money(totalBTCAmount, MoneyUnit.BTC), bitcoinAddress));
+                }
+                else if (tx.Kind == TxKind.SaveFromPrevWallet)
+                {
+                    BtcAddress a = tx.Teammate.BtcAddressCurrent;
+                    if (null == a)
+                    {
+                        Logger.WriteFormatMessage("No (yet) current address for teammate {0}:{1}, where I would be a co-signer. Most probably, I'm a co-signer of her/his Next address.", tx.TeammateId, tx.Teammate.Name);
+                        return null;
+                    }
+
+                    var bitcoinAddress = tx.Teammate.Team.Network.CreateBitcoinAddress(a.Address);
+                    resTx.Outputs.Add(new TxOut(new Money(totalBTCAmount, MoneyUnit.BTC), bitcoinAddress));
+                }
+
+                return resTx;
             }
-
-            totalBTCAmount -= tx.FeeBtc ?? NormalFeeBTC;
-            if (totalBTCAmount < tx.AmountBTC)
+            catch (FormatException fex)
             {
+                Logger.WriteFormatMessage("Invalid address for Tx {0}.", Print(tx));
+                Logger.WriteException(fex);
+
                 return null;
             }
-
-            if (tx.Kind == TxKind.Payout || tx.Kind == TxKind.Withdraw)
-            {
-                var txOutputs = tx.Outputs.OrderBy(x => x.Id).ToList();
-                var outputSum = 0M;
-                for (int output = 0; output < txOutputs.Count; output++)
-                {
-                    var txOutput = txOutputs[output];
-                    var bitcoinAddress = tx.Teammate.Team.Network.CreateBitcoinAddress(txOutput.PayTo.Address);
-                    resTx.Outputs.Add(new TxOut(new Money(txOutput.AmountBTC, MoneyUnit.BTC), bitcoinAddress));
-                    outputSum += txOutput.AmountBTC;
-                }
-                var changeAmount = totalBTCAmount - outputSum;
-                if (changeAmount > NormalFeeBTC)
-                {
-                    var bitcoinAddressChange = tx.Teammate.Team.Network.CreateBitcoinAddress(tx.Teammate.BtcAddressCurrent.Address);
-                    resTx.Outputs.Add(new TxOut(new Money(changeAmount, MoneyUnit.BTC), bitcoinAddressChange));
-                }
-            }
-            else if (tx.Kind == TxKind.MoveToNextWallet)
-            {
-                var bitcoinAddress = tx.Teammate.Team.Network.CreateBitcoinAddress(tx.Teammate.BtcAddressNext.Address);
-                resTx.Outputs.Add(new TxOut(new Money(totalBTCAmount, MoneyUnit.BTC), bitcoinAddress));
-            }
-            else if (tx.Kind == TxKind.SaveFromPrevWallet)
-            {
-                var bitcoinAddress = tx.Teammate.Team.Network.CreateBitcoinAddress(tx.Teammate.BtcAddressCurrent.Address);
-                resTx.Outputs.Add(new TxOut(new Money(totalBTCAmount, MoneyUnit.BTC), bitcoinAddress));
-            }
-
-            return resTx;
         }
 
 

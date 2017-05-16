@@ -29,7 +29,21 @@ namespace Teambrella.Client.App
     {
         private class TxTag
         {
-            internal Guid Id;
+            public readonly Guid Id;
+
+            public TxTag(Guid id)
+            {
+                Id = id;
+            }
+
+            public static bool Equals(TxTag t1, TxTag t2)
+            {
+                if (ReferenceEquals(t1, t2)) return true;
+
+                if (t1 == null || t2 == null) return false;
+
+                return t1.Id == t2.Id;
+            }
         }
 
         const char NBSP = '\u00a0';
@@ -76,14 +90,11 @@ namespace Teambrella.Client.App
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new TeambrellaApp());
-        }
+       }
 
         private static TxTag GetFromTx(Tx tx)
         {
-            var res = new TxTag()
-            {
-                Id = tx.Id,
-            };
+            var res = new TxTag(tx.Id);
             return res;
         }
 
@@ -846,7 +857,7 @@ namespace Teambrella.Client.App
             DataGridViewRow row = null;
             foreach (DataGridViewRow r in gridView.Rows)
             {
-                if (r.Tag == txTag)
+                if (TxTag.Equals(r.Tag as TxTag, txTag))
                 {
                     row = r;
                     break;
